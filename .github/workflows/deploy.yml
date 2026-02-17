@@ -63,53 +63,15 @@ jobs:
           tags: |
             ${{ env.DOCKER_IMAGE }}:${{ steps.vars.outputs.IMAGE_TAG }}
 
-      - name: Checkout ArgoCD repository
-        uses: actions/checkout@v4
+      - name: Trigger ArgoCD update-image event
+        uses: peter-evans/repository-dispatch@v4
         with:
-          repository: ${{ env.ARGOCD_REPO }}
           token: ${{ secrets.ARGOCD_REPO_TOKEN }}
-          path: argocd-repo
-
-      - name: Update ArgoCD frontend-prod.yaml tag
-        env:
-          IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
-        run: |
-          cd argocd-repo
-          # Cập nhật dòng tag: trong block helm values
-          python - << 'EOF'
-import os, sys, re, pathlib
-path = pathlib.Path("applications/frontend-prod.yaml")
-tag = os.environ.get("IMAGE_TAG")
-if not tag:
-    sys.exit("IMAGE_TAG env is not set")
-text = path.read_text(encoding="utf-8")
-def repl(m):
-    return m.group(1) + tag
-text_new = re.sub(
-    r'(image:\s*\n\s*repository:\s*uqtri/ecolink-fe\s*\n\s*tag:\s*)([^\n]+)',
-    repl,
-    text,
-    count=1,
-    flags=re.MULTILINE,
-)
-if text == text_new:
-    sys.exit("Không tìm thấy block image: repository: uqtri/ecolink-fe để update tag")
-path.write_text(text_new, encoding="utf-8")
-EOF
-
-      - name: Commit and push ArgoCD update
-        env:
-          IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
-        run: |
-          cd argocd-repo
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add applications/frontend-prod.yaml
-
-          if git diff --cached --quiet; then
-            echo "Không có thay đổi để commit."
-            exit 0
-          fi
-
-          git commit -m "chore: update ecolink-fe image tag to ${IMAGE_TAG}"
-          git push
+          repository: ${{ env.ARGOCD_REPO }}
+          event-type: update-image
+          client-payload: |
+            {
+              "file": "applications/frontend-prod.yaml",
+              "image": "uqtri/ecolink-fe",
+              "tag": "${{ steps.vars.outputs.IMAGE_TAG }}"
+            }
